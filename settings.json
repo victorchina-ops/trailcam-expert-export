@@ -1,0 +1,9 @@
+{
+  "input_dir": "images",
+  "output_dir": "exports",
+  "device": "auto",
+  "threads": 8,
+  "recursive": true,
+  "contact_sheet": true,
+  "contact_sheet_size": 20
+}

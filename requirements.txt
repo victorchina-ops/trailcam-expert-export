@@ -1,0 +1,7 @@
+# Tested inference dependencies. bootstrap.py installs the appropriate Torch build first.
+ultralytics==8.4.37
+numpy==2.3.5
+Pillow==12.3.0
+paddlepaddle==3.3.0
+# Pinned source archive avoids requiring Git on the target computer.
+clip @ https://github.com/ultralytics/CLIP/archive/b0c7af36eb99a5e103713e1792fc642f78059c39.zip

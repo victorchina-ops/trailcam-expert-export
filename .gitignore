@@ -1,0 +1,27 @@
+# Local input/output data and all model binaries stay private.
+images/*
+!images/.gitkeep
+exports/*
+!exports/.gitkeep
+models/
+.cache/
+.venv/
+.venv*/
+__pycache__/
+*.py[cod]
+*.log
+*.pt
+*.onnx
+*.pdiparams
+*.ts
+*.tar
+*.zip
+*.jpg
+*.JPG
+*.jpeg
+*.png
+*.csv
+.env
+.env.*
+dev_*/
+validation_local/
