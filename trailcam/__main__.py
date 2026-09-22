@@ -39,7 +39,7 @@ def arguments(argv=None):
     parser = argparse.ArgumentParser(description='Analyze local trail-camera photos with small vision models; no LLM needed.')
     parser.add_argument('directory', nargs='?', help='Input directory (or use --input)')
     parser.add_argument('--input', help='Input directory; default is images/')
-    parser.add_argument('--output', default=settings['output_dir'], help='Timestamped export directory')
+    parser.add_argument('--output', default=settings['output_dir'], help='Parent directory for dated per-run export folders')
     parser.add_argument('--models', default='models', help='Cached model directory')
     parser.add_argument('--cache', default='.cache', help='Incremental inference cache directory')
     parser.add_argument('--device', choices=('auto', 'cpu', 'cuda'), default=settings['device'])
@@ -137,20 +137,22 @@ def run(args):
                                               'sha256': sha, 'cache_hit': hit, 'configuration_hash': fingerprint,
                                               'current_run_seconds': round(time.perf_counter() - image_start, 6)}))
             print(f'[{index}/{len(paths)}] {"cached" if hit else result["status"]}: {relative}', flush=True)
-        csv_path = args.output / (stem + '.csv')
+        run_output = args.output / stem
+        run_output.mkdir(exist_ok=False)
+        csv_path = run_output / (stem + '.csv')
         write_csv(csv_path, rows, FIELDS)
         selection, contact_error, contact_path = [], None, None
         if args.contact_sheet and items:
             try:
                 from .contacts import make_contact_sheet
-                contact_path = args.output / (stem + '_contactsheet.jpg')
+                contact_path = run_output / (stem + '_contactsheet.jpg')
                 selection = make_contact_sheet(items, contact_path, run_id, args.contact_sheet_size)
             except Exception as exc:
                 contact_error = f'{type(exc).__name__}: {exc}'
                 print('Contact sheet failed; CSV is saved: ' + contact_error, file=sys.stderr)
         errors = sum(item['result'].get('status') != 'ok' for item in items)
         summary = {'run_id': run_id, 'version': __version__, 'input_dir': str(args.input),
-                   'csv': csv_path.name, 'image_count': len(items), 'csv_rows': len(rows),
+                   'export_subfolder': run_output.name, 'csv': csv_path.name, 'image_count': len(items), 'csv_rows': len(rows),
                    'cached_images': sum(item['cache_hit'] for item in items),
                    'analyzed_images': sum(not item['cache_hit'] for item in items),
                    'images_with_errors': errors, 'model_load_seconds': round(startup_seconds, 6),
@@ -158,7 +160,7 @@ def run(args):
                    'configuration_hash': fingerprint, 'configuration': config,
                    'contact_sheet': contact_path.name if contact_path and not contact_error else None,
                    'contact_sheet_error': contact_error, 'contact_sheet_selection': selection}
-        atomic_json(args.output / (stem + '_run.json'), summary)
+        atomic_json(run_output / (stem + '_run.json'), summary)
         print(f'CSV: {csv_path}\nAnalyzed: {summary["analyzed_images"]}; cached: {summary["cached_images"]}; '
               f'errors: {errors}; elapsed: {summary["total_seconds"]:.1f}s', flush=True)
         if selection:

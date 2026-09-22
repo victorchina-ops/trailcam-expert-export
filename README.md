@@ -33,22 +33,23 @@ This is an experimental analysis and manual-validation tool. It detects people, 
 
 The first run creates a local `.venv`, installs the tested dependencies, downloads and verifies the model weights, and analyzes the images. It does not modify your global Python packages. The first setup needs an internet connection and can take considerably longer than image analysis. Models require approximately 312 MB of downloads; Python dependencies, particularly GPU PyTorch, need additional disk space.
 
-Subsequent runs keep compatible installed packages, reuse the downloaded models, and analyze only new or changed image content. **Add more images and run the same file again.** Each run creates a new export without overwriting older exports.
+Subsequent runs keep compatible installed packages, reuse the downloaded models, and analyze only new or changed image content. **Add more images and run the same file again.** Each run creates a separate dated export folder without overwriting older exports.
 
 Windows with Python 3.12 is the tested platform. Python 3.11 is accepted by the installer. The Python entry point can also be invoked on other supported platforms, but those operating systems have not been validated end to end for this package.
 
 ## What each run writes
 
-By default, results appear in `exports`:
+By default, each run creates its own dated subfolder inside `exports`, keeping that run's files together:
 
 ```text
 exports/
-  export_2026-09-22_14-30-15_123456.csv
-  export_2026-09-22_14-30-15_123456_run.json
-  export_2026-09-22_14-30-15_123456_contactsheet.jpg
+  export_2026-09-22_14-30-15_123456/
+    export_2026-09-22_14-30-15_123456.csv
+    export_2026-09-22_14-30-15_123456_run.json
+    export_2026-09-22_14-30-15_123456_contactsheet.jpg
 ```
 
-The filename timestamp uses local time and includes microseconds. Inference timestamps inside the CSV use UTC.
+The folder and filenames share a local date/time timestamp that includes microseconds, so multiple runs on the same day get separate folders. Inference timestamps inside the CSV use UTC. Existing exports from earlier versions are left in place; they are not moved.
 
 - **CSV:** one row for every image currently in the selected input folder, including cached results. It contains each model's counts, count votes and averages, the combined output, per-person details, model evidence, devices, and timings. Detailed arrays are preserved in JSON cells, so a separate person CSV is unnecessary.
 - **Run JSON:** configuration and model hashes, image/error/cache totals, elapsed time, and the contact-sheet panel-to-filename mapping.
@@ -71,6 +72,8 @@ Use explicit input and output options when desired:
 ```powershell
 .\run_analysis.cmd --input "D:\Trail Photos\Camera 1" --output "D:\Trail Exports"
 ```
+
+`--output` selects the parent export directory; the program creates a new dated subfolder inside it for each run. In the example above, all files for one run appear under `D:\Trail Exports\export_YYYY-MM-DD_HH-MM-SS_microseconds\`. The `output_dir` setting below has the same meaning.
 
 Relative paths are resolved from the repository folder. Input, output, cache, and model folders must be distinct. Generated output/model/cache folders are excluded from recursive image discovery.
 
@@ -198,7 +201,7 @@ The backpack classifier accepts presence at scores at least `0.8`, absence at sc
 
 The cache keys successful predictions by the image's SHA256 content hash and a configuration fingerprint covering code, model content, runtime package versions, requested device, and thread settings. Replacing an image with changed bytes triggers reanalysis. Changing relevant configuration or implementation also invalidates old predictions. Use `--force` when deliberately repeating inference.
 
-Each normal export is a snapshot of the **currently selected folder**, not an append-only visitor database. Previously analyzed images still present in that folder are included from cache. Removed images are absent from the next snapshot, while old export files remain unchanged. An unchanged run still writes a new snapshot and, unless disabled, a new contact sheet.
+Each normal export is a snapshot of the **currently selected folder**, not an append-only visitor database. Previously analyzed images still present in that folder are included from cache. Removed images are absent from the next snapshot, while old export files remain unchanged. An unchanged run still creates a new dated subfolder containing a new snapshot and, unless disabled, a new contact sheet.
 
 Identical image bytes under different filenames can share cached inference, but still produce separate CSV rows. Different selected folders may reuse the content cache. **Counts represent appearances in photographs, not unique people, visits, or trail passages.** Summing overlapping snapshots or repeated photos will double-count appearances.
 

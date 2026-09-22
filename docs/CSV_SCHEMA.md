@@ -1,6 +1,6 @@
 # CSV schema and interpretation
 
-Each export contains one row per selected input image. By default the CSV is a snapshot of the current input folder, including cached results. `--export-new-only` includes only images actually analyzed during that run. An empty selection produces a header-only CSV.
+Each export contains one row per selected input image. By default the CSV is a snapshot of the current input folder, including cached results. `--export-new-only` includes only images actually analyzed during that run. An empty selection produces a header-only CSV. Each run writes its CSV, run JSON, and optional contact sheet into a separate `export_YYYY-MM-DD_HH-MM-SS_microseconds` subfolder of the configured output directory.
 
 Files are comma-separated UTF-8 with a BOM, with standard CSV quoting. Read them using a CSV parser, not by splitting lines on commas. JSON evidence is stored inside quoted CSV cells.
 
@@ -17,7 +17,7 @@ Files are comma-separated UTF-8 with a BOM, with standard CSV quoting. Read them
 
 | Column | Meaning |
 |---|---|
-| `run_id` | Local timestamp shared by the CSV, run JSON, and contact-sheet filename. |
+| `run_id` | Local timestamp shared by the dated export subfolder and the CSV, run JSON, and contact-sheet filenames. |
 | `image_id` | `img_` plus the first 16 hexadecimal characters of the image SHA256; fallback ordinal when hashing failed. Identical bytes can have the same ID on multiple filename rows. |
 | `relative_path` | Image path relative to the selected input directory, using `/` separators. |
 | `sha256` | Full image-content hash. A duplicate filename row with identical bytes can reuse inference. |
@@ -174,14 +174,14 @@ A compact interpretation reminder repeated on each row: direction is facing rath
 
 ## Reading full evidence in Python
 
-Python's default CSV field-size limit may be smaller than a crowded image's evidence cell. Increase it before loading:
+Python's default CSV field-size limit may be smaller than a crowded image's evidence cell. Increase it before loading, and replace both `DATE` placeholders with the timestamp of your chosen run:
 
 ```python
 import csv
 import json
 
 csv.field_size_limit(100_000_000)
-with open("exports/export_DATE.csv", encoding="utf-8-sig", newline="") as handle:
+with open("exports/export_DATE/export_DATE.csv", encoding="utf-8-sig", newline="") as handle:
     for row in csv.DictReader(handle):
         if row["status"] not in {"ok", "partial_error"}:
             continue

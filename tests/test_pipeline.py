@@ -113,9 +113,9 @@ class PipelineTests(unittest.TestCase):
                                 "--no-contact-sheet", *extra])
 
     def last_export(self):
-        summary_file = sorted(self.output.glob("export_*_run.json"))[-1]
+        summary_file = sorted(self.output.glob("export_*/export_*_run.json"))[-1]
         summary = json.loads(summary_file.read_text(encoding="utf-8"))
-        with (self.output / summary["csv"]).open(encoding="utf-8-sig", newline="") as stream:
+        with (summary_file.parent / summary["csv"]).open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream))
         return summary, rows
 
@@ -133,6 +133,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.vision_constructor.call_count, 1)
         self.assertEqual(len(second_rows), 2)
         self.assertNotEqual(first["csv"], second["csv"])
+        first_folder = self.output / first["export_subfolder"]
+        second_folder = self.output / second["export_subfolder"]
+        self.assertNotEqual(first_folder, second_folder)
+        self.assertEqual(first_folder.name, "export_" + first["run_id"])
+        self.assertEqual(second_folder.name, "export_" + second["run_id"])
+        self.assertTrue((first_folder / first["csv"]).is_file())
+        self.assertTrue((second_folder / second["csv"]).is_file())
+        self.assertEqual(len(list(first_folder.iterdir())), 2)
+        self.assertEqual(len(list(second_folder.iterdir())), 2)
+        self.assertTrue(all(path.is_dir() for path in self.output.iterdir()))
         self.assertEqual({row["sha256"] for row in first_rows}, {row["sha256"] for row in second_rows})
         self.image("one.jpg", "green")
         self.assertEqual(entry.run(args), 0)
@@ -185,7 +195,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(entry.run(self.args("--contact-sheet")), 0)
         summary, _ = self.last_export()
         self.assertEqual(len(summary["contact_sheet_selection"]), 1)
-        with Image.open(self.output / summary["contact_sheet"]) as image:
+        folder = self.output / summary["export_subfolder"]
+        self.assertEqual({p.name for p in folder.iterdir()}, {
+            summary["csv"], summary["contact_sheet"], "export_" + summary["run_id"] + "_run.json"})
+        with Image.open(self.output / summary["export_subfolder"] / summary["contact_sheet"]) as image:
             self.assertEqual(image.format, "JPEG")
 
     def test_csv_retains_canonical_totals_and_expert_disagreements(self):
