@@ -21,9 +21,15 @@ def features(item):
             tags.add(field)
     people = combined.get('counts', {}).get('people_total', 0)
     tags.add('no_people' if not people else 'one_person' if people == 1 else 'small_group' if people <= 4 else 'crowd')
-    for direction, count in combined.get('direction_counts', {}).items():
+    for direction, count in (combined.get('direction_counts') or {}).items():
         if count:
             tags.add('direction_' + direction)
+    if combined.get('children'):
+        tags.add('children')
+    if combined.get('large_bags'):
+        tags.add('large_bags')
+    if (result.get('post') or {}).get('event_image_count', 1) > 1:
+        tags.add('multi_image_event')
     if combined.get('orientation_conflicts'):
         tags.add('orientation_disagreement')
     if any(v.get('status') == 'no_majority' for v in result.get('votes', {}).values()):
@@ -71,16 +77,17 @@ def make_contact_sheet(items, output_path, run_id, limit=20):
     sheet = Image.new('RGB', (cols * tile_w, header_h + rows * tile_h), '#101820')
     draw = ImageDraw.Draw(sheet)
     draw.text((16, 12), 'Trail camera visual validation | ' + run_id, font=heading, fill='white')
-    draw.text((16, 46), 'YOLOE boxes + translucent masks; yellow pose keypoints; labels show combined apparent facing.', font=normal, fill='#d2dbe5')
+    draw.text((16, 46), 'YOLOE boxes (conf >= 0.25) + translucent masks; yellow pose keypoints; white boxes = accepted people.', font=normal, fill='#d2dbe5')
     draw.text((16, 73), 'Cyan: people | pink: backpacks | green: dogs | gold: bicycles | orange: other objects. Predictions need review.', font=small, fill='#d2dbe5')
-    draw.text((16, 99), 'Person labels: F=front, B=back, S=side, ?=unknown; L/R/T/A=left/right/toward/away. Full evidence is in the CSV.', font=small, fill='#d2dbe5')
+    draw.text((16, 99), 'Person labels: A=adult, C=child, ?=age unknown; L/R/T/A/S=left/right/toward/away/stationary (m=motion, f=facing); B=large bag.', font=small, fill='#d2dbe5')
     manifest = []
     for index, item in enumerate(selected):
         x0, y0 = (index % cols) * tile_w, header_h + (index // cols) * tile_h
         result = item['result']
         try:
             with Image.open(item['path']) as opened:
-                original = ImageOps.exif_transpose(opened).convert('RGB')
+                from .vision import to_rgb8
+                original = to_rgb8(ImageOps.exif_transpose(opened))
             original.thumbnail((tile_w - 12, image_h - 8))
             canvas = original.convert('RGBA')
             overlay = Image.new('RGBA', canvas.size)
@@ -88,7 +95,7 @@ def make_contact_sheet(items, output_path, run_id, limit=20):
             sx = canvas.width / result.get('width', canvas.width)
             sy = canvas.height / result.get('height', canvas.height)
             detections = result.get('experts', {}).get('yoloe', {}).get('detections', [])
-            for det in detections:
+            for det in (d for d in detections if d.get('confidence', 0) >= .25):
                 label = det.get('label', det.get('class_name', 'object'))
                 color = COLORS.get(label, '#ff9f68')
                 polygon = det.get('mask_polygon_xy') or []
@@ -101,7 +108,7 @@ def make_contact_sheet(items, output_path, run_id, limit=20):
                     if label != 'person':
                         od.text((xy[0], max(0, xy[1] - 16)), label, font=small, fill=color,
                                 stroke_width=1, stroke_fill='black')
-            for det in result.get('experts', {}).get('pose', {}).get('detections', []):
+            for det in (d for d in result.get('experts', {}).get('pose', {}).get('detections', []) if d.get('confidence', 0) >= .25):
                 kp = det.get('keypoints', [])
                 if len(kp) != 17:
                     continue
@@ -111,15 +118,18 @@ def make_contact_sheet(items, output_path, run_id, limit=20):
                 for px, py, confidence in kp:
                     if confidence >= .6:
                         od.ellipse((px * sx - 2, py * sy - 2, px * sx + 2, py * sy + 2), fill='#ffe55a')
-            for person in result.get('persons', []):
+            accepted = [p for p in result.get('persons', []) if p.get('accepted')]
+            for number, person in enumerate(accepted, 1):
                 box = person['bbox_xyxy']
                 c = person.get('combined', {})
-                number = str(int(person['person_id'].replace('person_', '')))
-                orientation = {'front': 'F', 'back': 'B', 'side': 'S'}.get(c.get('orientation'), '?')
-                direction = {'left': 'L', 'right': 'R', 'toward': 'T', 'away': 'A'}.get(c.get('direction'), '?')
-                text = number + ' ' + orientation + '/' + direction
+                xy = [box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy]
+                od.rectangle(xy, outline='white', width=1)
+                age = {'adult': 'A', 'child': 'C'}.get(c.get('age'), '?')
+                direction = {'left': 'L', 'right': 'R', 'toward': 'T', 'away': 'A', 'stationary': 'S'}.get(c.get('direction'), '?')
+                source = {'motion': 'm', 'facing': 'f'}.get(c.get('direction_source'), '')
+                text = f"{number} {age} {direction}{source}" + (' B' if c.get('large_bag') is True else '')
                 tw = od.textlength(text, font=labels)
-                od.text((max(0, min(box[0] * sx, canvas.width - tw - 1)), max(0, box[1] * sy)), text, font=labels, fill='white', stroke_width=1, stroke_fill='black')
+                od.text((max(0, min(xy[0], canvas.width - tw - 1)), max(0, xy[1] - 14)), text, font=labels, fill='white', stroke_width=1, stroke_fill='black')
             canvas = Image.alpha_composite(canvas, overlay).convert('RGB')
             sheet.paste(canvas, (x0 + (tile_w - canvas.width) // 2, y0 + (image_h - canvas.height) // 2))
         except (OSError, ValueError) as exc:
@@ -130,6 +140,12 @@ def make_contact_sheet(items, output_path, run_id, limit=20):
             path_label = '...' + path_label[4:]
         draw.text((x0 + 8, y0 + image_h + 3), f'{index + 1:02d}  {path_label}', font=normal, fill='white')
         found = [f'{k.replace("_", " ")}={v}' for k, v in counts.items() if v and k != 'cars_trucks_buses']
+        combined = result.get('combined', {})
+        if combined.get('children'):
+            found.insert(1, f"children={combined['children']}")
+        event = (result.get('post') or {}).get('event_id')
+        if event and (result.get('post') or {}).get('event_image_count', 1) > 1:
+            found.append(f"event frames={result['post']['event_image_count']}")
         label = ', '.join(found) or 'No accepted detections'
         # Bound text explicitly to avoid overflowing neighboring panels.
         while label and draw.textlength(label, font=small) > tile_w - 20:

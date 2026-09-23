@@ -5,5 +5,17 @@
   "threads": 8,
   "recursive": true,
   "contact_sheet": true,
-  "contact_sheet_size": 20
+  "contact_sheet_size": 20,
+  "profile": "standard",
+  "empty_frame_gate": false,
+  "camera_id_mode": "folder",
+  "camera_id_pattern": null,
+  "event_gap_seconds": 60,
+  "near_fraction": 0.0,
+  "age_model": null,
+  "age_mode": "photo",
+  "ollama_host": "http://localhost:11434",
+  "events": false,
+  "geometry_age": false,
+  "large_bags": false
 }

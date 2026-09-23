@@ -223,22 +223,35 @@ class AttributeEngine:
         # Keep precision identical to PaddleX's native postprocessor.
         return {name: round(float(scores[index]), 5) for index, name in INDEX_NAMES.items()}
 
-    def analyze(self, image_path: Path, persons: list) -> dict:
-        """Return one attribute record for every canonical person, including failures."""
+    def analyze(self, image_path: Path, persons: list, image=None, scale: float = 1.0) -> dict:
+        """Return one attribute record for every candidate person, including failures.
+
+        ``image`` optionally reuses an already decoded RGB PIL image whose pixel
+        coordinates are the original coordinates divided by ``scale``. The
+        detail gate and ``crop_width``/``crop_height`` use the pixels the model
+        receives (half resolution for large JPEGs); ``crop_xyxy`` is in
+        original-image pixels.
+        """
         from PIL import Image, ImageOps
 
         started = time.perf_counter()
         results = []
         if persons:
-            with Image.open(image_path) as source:
-                image = ImageOps.exif_transpose(source).convert("RGB")
+            if image is None:
+                from .vision import to_rgb8
+                with Image.open(image_path) as source:
+                    image = to_rgb8(ImageOps.exif_transpose(source))
+                scale = 1.0
             for person in persons:
                 person_started = time.perf_counter()
                 try:
-                    box = crop_box(person["bbox_xyxy"], image.width, image.height)
+                    box = crop_box([v / scale for v in person["bbox_xyxy"]], image.width, image.height)
                     crop = image.crop(box)
+                    # Gate on the crop the model sees (half-resolution decode
+                    # for large JPEGs), not on the original-pixel size.
                     attributes = derive_attributes(self._predict_crop(crop), crop.width, crop.height)
-                    attributes.update({"status": "ok", "error": None, "crop_xyxy": box})
+                    attributes.update({"status": "ok", "error": None,
+                                       "crop_xyxy": [round(v * scale, 1) for v in box]})
                 except Exception as exc:
                     attributes = unknown_attributes(f"{type(exc).__name__}: {exc}")
                 attributes["seconds"] = time.perf_counter() - person_started

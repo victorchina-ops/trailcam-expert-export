@@ -92,5 +92,46 @@ class AttributePolicyTests(unittest.TestCase):
         self.assertEqual(got["persons"][1]["attributes"]["status"], "ok")
 
 
+class DecodedImageTests(unittest.TestCase):
+    def engine(self):
+        engine = object.__new__(AttributeEngine)
+        engine.device = "cpu"
+        engine.requested_device = "auto"
+        engine.fallback_reasons = []
+        engine.crops = []
+        engine._predict_crop = lambda crop: engine.crops.append(crop.size) or sample_scores()
+        return engine
+
+    def test_detail_gate_uses_the_crop_the_model_sees(self):
+        # v2: a reused half-resolution decode (scale 2) is cropped at original / 2,
+        # and the 80 x 160 detail gate applies to that crop, not to the original box.
+        from PIL import Image
+        engine = self.engine()
+        decoded = Image.new("RGB", (500, 400))
+        got = engine.analyze(Path("not_opened.jpg"), [
+            {"person_id": "near", "bbox_xyxy": [100, 100, 300, 500]},   # 200 x 400 original -> 100 x 200 crop
+            {"person_id": "far", "bbox_xyxy": [400, 100, 540, 440]},    # 140 x 340 original -> 70 x 170 crop
+        ], decoded, 2.0)
+        self.assertEqual(engine.crops, [(100, 200), (70, 170)])
+        near, far = (p["attributes"] for p in got["persons"])
+        self.assertEqual((near["crop_width"], near["crop_height"], near["detail_gate_passed"]), (100, 200, True))
+        self.assertEqual(near["crop_xyxy"], [100.0, 100.0, 300.0, 500.0])  # reported in original pixels
+        self.assertEqual(near["native_orientation_label"], "front")
+        self.assertEqual((far["crop_width"], far["crop_height"], far["detail_gate_passed"]), (70, 170, False))
+        self.assertEqual(far["native_orientation_label"], "unknown")
+        self.assertIn("crop_below_configured_detail_gate", far["gate_reasons"]["orientation"])
+
+    def test_without_a_decoded_image_the_file_is_read_at_full_scale(self):
+        from PIL import Image
+        engine = self.engine()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "frame.png"
+            Image.new("RGB", (600, 500)).save(path)
+            got = engine.analyze(path, [{"person_id": "p", "bbox_xyxy": [400, 100, 540, 440]}], None, 2.0)
+        attributes = got["persons"][0]["attributes"]
+        self.assertEqual(engine.crops, [(140, 340)])  # the scale only applies to a supplied image
+        self.assertEqual((attributes["crop_xyxy"], attributes["detail_gate_passed"]), ([400, 100, 540, 440], True))
+
+
 if __name__ == "__main__":
     unittest.main()
