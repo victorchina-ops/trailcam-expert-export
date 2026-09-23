@@ -153,7 +153,10 @@ def event_id_for(event_records, index=None):
     first = frames[0] if frames else {}
     timed = _timed(frames)
     if timed:
-        stamp = min(timed, key=lambda pair: pair[0])[1].strftime("%Y-%m-%dT%H-%M-%S")
+        moment = min(timed, key=lambda pair: pair[0])[1]
+        # strftime(%Y) does not zero-pad years below 1000 on every platform.
+        stamp = (f"{moment.year:04d}-{moment.month:02d}-{moment.day:02d}T"
+                 f"{moment.hour:02d}-{moment.minute:02d}-{moment.second:02d}")
     else:
         path = str(first.get("relative_path") or "").replace("\\", "/")
         stamp = PurePosixPath(path).name if path else str(first.get("image_id") or "")
